@@ -3,3 +3,6 @@ pytest
 pytest-flask
 mysql-connector-python
 python-dotenv
+Flask-Bcrypt
+Flask-Login
+Flask-Cors
