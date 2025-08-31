@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, useNavigate, Navigate } f
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
+import ScanDetailPage from './pages/ScanDetailPage';
 import axios from 'axios';
 import './App.css';
 
@@ -78,6 +79,7 @@ function App() {
           <Route path="/login" element={isAuthenticated ? <Navigate to="/dashboard" /> : <LoginWrapper onLoginSuccess={() => setIsAuthenticated(true)} />} />
           <Route path="/register" element={isAuthenticated ? <Navigate to="/dashboard" /> : <RegisterPage />} />
           <Route path="/dashboard" element={isAuthenticated ? <DashboardPage onLogout={handleLogout} /> : <Navigate to="/login" />} />
+          <Route path="/scans/:id" element={isAuthenticated ? <ScanDetailPage /> : <Navigate to="/login" />} />
         </Routes>
       </div>
     </Router>

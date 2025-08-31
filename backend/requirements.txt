@@ -6,3 +6,4 @@ python-dotenv
 Flask-Bcrypt
 Flask-Login
 Flask-Cors
+requests
