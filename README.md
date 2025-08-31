@@ -89,11 +89,23 @@ cd .. # Return to the root directory
 The backend and frontend servers must be run separately in two different terminal sessions.
 
 ### 1. Run the Backend Server
-Make sure you are in the project root directory and have your Python virtual environment activated.
+Make sure you are in the project root directory. You can run the development server (for testing) or the production server (for deployment).
+
+**For Development:**
 ```bash
+# Make sure your virtual environment is activated
+source backend/venv/bin/activate
 python backend/app.py
 ```
-The Flask server will start on `http://127.0.0.1:5001`. The database tables will be created automatically on the first run.
+The Flask development server will start on `http://127.0.0.1:5001`.
+
+**For Production (Recommended):**
+Use the deployment script to start the Gunicorn server.
+```bash
+chmod +x deploy.sh
+./deploy.sh start
+```
+This will activate the correct environment and run the server on `http://127.0.0.1:5001`.
 
 ### 2. Run the Frontend Server
 Open a new terminal and navigate to the `/frontend` directory.
