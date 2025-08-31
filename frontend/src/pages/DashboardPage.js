@@ -52,6 +52,10 @@ function DashboardPage({ onLogout }) {
             <h2>Dashboard</h2>
             <button onClick={onLogout} style={{ position: 'absolute', top: 10, right: 10 }}>Logout</button>
 
+            <div style={{ padding: '10px', margin: '10px 0', border: '1px solid red', backgroundColor: '#ffdddd', color: 'red' }}>
+                <strong>Peringatan (Disclaimer):</strong> Alat ini hanya boleh digunakan pada situs web yang Anda miliki atau memiliki izin eksplisit untuk diuji. Penggunaan tanpa izin adalah ilegal.
+            </div>
+
             <div className="new-scan-form">
                 <h3>Start a New Scan</h3>
                 <form onSubmit={handleNewScan}>

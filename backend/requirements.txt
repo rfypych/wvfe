@@ -7,3 +7,4 @@ Flask-Bcrypt
 Flask-Login
 Flask-Cors
 requests
+beautifulsoup4

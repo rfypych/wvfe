@@ -9,6 +9,8 @@ from flask_bcrypt import Bcrypt
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from flask_cors import CORS
 from scanners.sensitive_file_scanner import check_sensitive_files
+from scanners.crawler import crawl_site
+from scanners.sqli_scanner import check_sqli
 
 # Load environment variables from .env file
 load_dotenv()
@@ -182,9 +184,11 @@ def logout():
 def run_real_scan(app_context, scan_id, target_url):
     """
     This function runs in a background thread to perform the actual scan.
+    It orchestrates all the different scanner modules.
     """
     with app_context:
         print(f"Starting real scan for scan_id: {scan_id} on {target_url}")
+        all_vulnerabilities = []
         conn = get_db_connection()
         if not conn:
             print(f"Scan {scan_id} failed: could not connect to DB")
@@ -196,25 +200,34 @@ def run_real_scan(app_context, scan_id, target_url):
             cursor.execute("UPDATE scans SET status = 'running' WHERE id = %s", (scan_id,))
             conn.commit()
 
-            # 2. Run all scanner modules
-            # For now, we only have one module. In the future, we can loop through them.
-            found_vulns = check_sensitive_files(target_url)
+            # 2. Run the crawler to get all targets
+            crawl_targets = crawl_site(target_url)
 
-            # 3. Save vulnerabilities to the database
-            for vuln in found_vulns:
+            # 3. Run all scanner modules on the discovered targets
+            print(f"--- Running Sensitive File Scan for scan {scan_id} ---")
+            # The sensitive file scanner should check all discovered links
+            for link in crawl_targets['links']:
+                all_vulnerabilities.extend(check_sensitive_files(link))
+
+            print(f"--- Running SQL Injection Scan for scan {scan_id} ---")
+            all_vulnerabilities.extend(check_sqli(crawl_targets))
+
+            # (Future modules like XSS scanner would be called here)
+
+            # 4. Save all found vulnerabilities to the database
+            for vuln in all_vulnerabilities:
                 cursor.execute(
                     "INSERT INTO vulnerabilities (scan_id, type, url, payload, details) VALUES (%s, %s, %s, %s, %s)",
                     (scan_id, vuln['type'], vuln['url'], vuln['payload'], vuln['details'])
                 )
 
-            # 4. Set status to 'completed'
+            # 5. Set status to 'completed'
             cursor.execute("UPDATE scans SET status = 'completed' WHERE id = %s", (scan_id,))
             conn.commit()
-            print(f"Real scan {scan_id} completed. Found {len(found_vulns)} vulnerabilities.")
+            print(f"Real scan {scan_id} completed. Found {len(all_vulnerabilities)} total vulnerabilities.")
 
         except Exception as e:
             print(f"An error occurred during scan {scan_id}: {e}")
-            # In case of any error during the scan, mark as 'failed'
             if conn.is_connected():
                 cursor = conn.cursor()
                 cursor.execute("UPDATE scans SET status = 'failed' WHERE id = %s", (scan_id,))
