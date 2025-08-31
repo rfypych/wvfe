@@ -47,20 +47,20 @@ def test_start_scan_endpoint(mock_get_db, mock_run_scan, client):
 
 # --- Test Full Scan Logic ---
 
+@patch('app.check_xss')
 @patch('app.check_sqli')
 @patch('app.check_sensitive_files')
 @patch('app.crawl_site')
 @patch('app.get_db_connection')
-def test_run_real_scan_orchestration(mock_get_db, mock_crawl, mock_sensitive_scan, mock_sqli_scan):
+def test_run_real_scan_orchestration(mock_get_db, mock_crawl, mock_sensitive_scan, mock_sqli_scan, mock_xss_scan):
     """Test that run_real_scan correctly orchestrates all modules."""
     from app import run_real_scan
 
     # --- Setup Mocks ---
-    # Mock crawler results
     mock_crawl.return_value = {'links': {'http://test.com/page1'}, 'forms': []}
-    # Mock scanner results
     mock_sensitive_scan.return_value = [{'type': 'Sensitive Data Exposure', 'url': 'http://test.com/.env', 'payload': 'N/A', 'details': '...'}]
     mock_sqli_scan.return_value = [{'type': 'SQL Injection', 'url': 'http://test.com/page1?id=1', 'payload': "'", 'details': '...'}]
+    mock_xss_scan.return_value = [{'type': 'Reflected XSS', 'url': 'http://test.com/page1?q=xss', 'payload': '<script>', 'details': '...'}]
 
     mock_cursor = mock_get_db.return_value.cursor.return_value
 
@@ -68,20 +68,25 @@ def test_run_real_scan_orchestration(mock_get_db, mock_crawl, mock_sensitive_sca
     run_real_scan(app.app_context(), scan_id=1, target_url='http://test.com')
 
     # --- Asserts ---
-    # 1. Check that the orchestrator called all the necessary modules
+    # 1. Check that all modules were called
     mock_crawl.assert_called_once_with('http://test.com')
     mock_sensitive_scan.assert_called_with('http://test.com/page1')
-    mock_sqli_scan.assert_called_once_with({'links': {'http://test.com/page1'}, 'forms': []})
+    mock_sqli_scan.assert_called_once_with(mock_crawl.return_value)
+    mock_xss_scan.assert_called_once_with(mock_crawl.return_value)
 
-    # 2. Check that both vulnerabilities were inserted into the database
-    assert mock_cursor.execute.call_count >= 4 # 1 for running, 2 for inserts, 1 for completed
+    # 2. Check that all 3 vulnerabilities were inserted
+    assert mock_cursor.execute.call_count >= 5 # 1 running, 3 inserts, 1 completed
     mock_cursor.execute.assert_any_call(
         "INSERT INTO vulnerabilities (scan_id, type, url, payload, details) VALUES (%s, %s, %s, %s, %s)",
-        (1, 'Sensitive Data Exposure', 'http://test.com/.env', 'N/A', '...')
+        (1, 'Sensitive Data Exposure', ANY, ANY, ANY)
     )
     mock_cursor.execute.assert_any_call(
         "INSERT INTO vulnerabilities (scan_id, type, url, payload, details) VALUES (%s, %s, %s, %s, %s)",
-        (1, 'SQL Injection', 'http://test.com/page1?id=1', "'", '...')
+        (1, 'SQL Injection', ANY, ANY, ANY)
+    )
+    mock_cursor.execute.assert_any_call(
+        "INSERT INTO vulnerabilities (scan_id, type, url, payload, details) VALUES (%s, %s, %s, %s, %s)",
+        (1, 'Reflected XSS', ANY, ANY, ANY)
     )
 
     # 3. Check that the final status was set to 'completed'

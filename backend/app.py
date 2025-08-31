@@ -11,6 +11,7 @@ from flask_cors import CORS
 from scanners.sensitive_file_scanner import check_sensitive_files
 from scanners.crawler import crawl_site
 from scanners.sqli_scanner import check_sqli
+from scanners.xss_scanner import check_xss
 
 # Load environment variables from .env file
 load_dotenv()
@@ -212,7 +213,8 @@ def run_real_scan(app_context, scan_id, target_url):
             print(f"--- Running SQL Injection Scan for scan {scan_id} ---")
             all_vulnerabilities.extend(check_sqli(crawl_targets))
 
-            # (Future modules like XSS scanner would be called here)
+            print(f"--- Running XSS Scan for scan {scan_id} ---")
+            all_vulnerabilities.extend(check_xss(crawl_targets))
 
             # 4. Save all found vulnerabilities to the database
             for vuln in all_vulnerabilities:
