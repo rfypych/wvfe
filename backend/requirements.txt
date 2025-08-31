@@ -8,3 +8,4 @@ Flask-Login
 Flask-Cors
 requests
 beautifulsoup4
+gunicorn
