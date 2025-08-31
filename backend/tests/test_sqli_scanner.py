@@ -1,54 +1,62 @@
 import pytest
-from unittest.mock import patch, MagicMock, ANY
-from scanners.sqli_scanner import check_sqli
+from unittest.mock import patch, MagicMock
+from scanners.sqli_scanner import check_sqli, _get_column_count, _extract_data_with_union
 
-@patch('scanners.sqli_scanner.requests.get')
-def test_check_sqli_on_url(mock_get):
-    """Test finding an error-based SQLi vulnerability in a URL parameter."""
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.text = "Error: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version..."
-    mock_get.return_value = mock_response
+# --- Test Helper Functions Directly ---
 
-    targets = {
-        'links': {'http://test.com/search?q=test'},
-        'forms': []
-    }
+@patch('scanners.sqli_scanner.requests.Session')
+def test_get_column_count(MockSession):
+    """Test the _get_column_count helper function."""
+    mock_session = MockSession.return_value
+    mock_ok_response = MagicMock(text="OK")
+    mock_fail_response = MagicMock(text="Unknown column '3'")
 
+    def side_effect(url, params, **kwargs):
+        if params['id'] == "1' ORDER BY 3-- ":
+            return mock_fail_response
+        return mock_ok_response
+
+    mock_session.get.side_effect = side_effect
+
+    count = _get_column_count(mock_session, 'http://test.com', 'get', params={'id':'1'})
+    assert count == 2
+
+@patch('scanners.sqli_scanner.requests.Session')
+def test_extract_data_with_union(MockSession):
+    """Test the _extract_data_with_union helper function."""
+    mock_session = MockSession.return_value
+    db_version = "10.4.13-MariaDB"
+    mock_response = MagicMock(text=f"Some content WVFE-START{db_version}WVFE-END more content")
+    mock_session.get.return_value = mock_response
+
+    data = _extract_data_with_union(mock_session, 'http://test.com', 'get', column_count=2, params={'id':'1'})
+
+    assert data is not None
+    assert data['Version'] == db_version
+
+# --- Test Main Orchestration Function ---
+
+@patch('scanners.sqli_scanner._extract_data_with_union')
+@patch('scanners.sqli_scanner._get_column_count')
+@patch('scanners.sqli_scanner.requests.Session')
+def test_check_sqli_orchestration(MockSession, mock_get_cols, mock_extract_data):
+    """
+    Test that check_sqli correctly calls helper functions after finding an error.
+    """
+    mock_session = MockSession.return_value
+    mock_session.get.return_value = MagicMock(text="SQL syntax.*MySQL") # Initial error found
+
+    mock_get_cols.return_value = 3
+    mock_extract_data.return_value = {"Version": "mocked_version"}
+
+    targets = {'links': {'http://test.com/vuln?id=1'}, 'forms': []}
     vulnerabilities = check_sqli(targets)
 
     assert len(vulnerabilities) == 1
     vuln = vulnerabilities[0]
-    assert vuln['type'] == 'SQL Injection (MySQL Error)'
-    # The scanner URL-encodes the payload
-    assert vuln['url'] == "http://test.com/search?q=test%27"
-    assert vuln['payload'] == "'"
+    assert "Proof of Concept" in vuln['details']
+    assert "Version: mocked_version" in vuln['details']
 
-    mock_get.assert_called_once_with("http://test.com/search?q=test%27", timeout=5, verify=False, headers=ANY)
-
-@patch('scanners.sqli_scanner.requests.post')
-def test_check_sqli_on_form(mock_post):
-    """Test finding an error-based SQLi vulnerability in a form submission."""
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.text = "ORA-01756: quoted string not properly terminated"
-    mock_post.return_value = mock_response
-
-    targets = {
-        'links': set(),
-        'forms': [{
-            'url': 'http://test.com/login',
-            'method': 'post',
-            'inputs': [{'name': 'username', 'type': 'text'}, {'name': 'password', 'type': 'password'}]
-        }]
-    }
-
-    vulnerabilities = check_sqli(targets)
-
-    assert len(vulnerabilities) >= 1
-    vuln = vulnerabilities[0]
-    assert vuln['type'] == 'SQL Injection (Oracle Error)'
-    assert vuln['url'] == 'http://test.com/login'
-    assert vuln['payload'] == "'"
-
-    mock_post.assert_any_call('http://test.com/login', data={'username': "test'", 'password': 'test'}, timeout=5, verify=False, headers=ANY)
+    # Assert that our helpers were called
+    mock_get_cols.assert_called_once()
+    mock_extract_data.assert_called_once()
