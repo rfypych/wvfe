@@ -105,7 +105,27 @@ The React development server will start, and your browser should automatically o
 
 You can now register a new user, log in, and start scanning from the dashboard.
 
-## 🚀 Deployment to aaPanel with Apache
+## 🚀 Easy Deployment with Script (Recommended)
+
+To simplify the deployment process, a helper script `deploy.sh` is provided. This script will automate dependency installation, build the frontend, and generate the necessary server configurations for you.
+
+### How to Use
+1. **Make the script executable:**
+   ```bash
+   chmod +x deploy.sh
+   ```
+
+2. **Run the script:**
+   ```bash
+   ./deploy.sh
+   ```
+
+3. **Follow the on-screen instructions:**
+   - The script will first build the backend and frontend.
+   - It will then ask for your domain name.
+   - Finally, it will print the exact instructions and configuration snippets you need to copy and paste into your aaPanel website settings.
+
+## Manual Deployment to aaPanel with Apache
 
 Deploying a modern web application with a separate frontend and backend requires a few specific steps. Here is a guide to deploying WVFE on a server managed by aaPanel with Apache.
 
