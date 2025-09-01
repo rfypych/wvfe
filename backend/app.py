@@ -20,8 +20,8 @@ app = Flask(__name__)
 # A secret key is needed for session management (e.g., by Flask-Login)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'a_super_secret_default_key')
 
-# Enable CORS for all routes, allowing credentials to be sent
-CORS(app, supports_credentials=True)
+# Enable CORS, specifying the frontend origin and allowing credentials
+CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}}, supports_credentials=True)
 
 bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)

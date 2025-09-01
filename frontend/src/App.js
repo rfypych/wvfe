@@ -4,14 +4,8 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import ScanDetailPage from './pages/ScanDetailPage';
-import axios from 'axios';
+import apiClient from './api';
 import './App.css';
-
-const API_URL = 'http://127.0.0.1:5001';
-const axiosInstance = axios.create({
-    baseURL: API_URL,
-    withCredentials: true
-});
 
 
 function HomePage({ isAuthenticated, onLogout }) {
@@ -51,7 +45,7 @@ function App() {
     const checkAuth = async () => {
         try {
             // A simple way to check auth is to hit a protected endpoint
-            await axiosInstance.get('/api/dashboard');
+            await apiClient.get('/api/dashboard');
             setIsAuthenticated(true);
         } catch (error) {
             setIsAuthenticated(false);
@@ -63,7 +57,7 @@ function App() {
   }, []);
 
   const handleLogout = async () => {
-    await axiosInstance.get('/api/auth/logout');
+    await apiClient.get('/api/auth/logout');
     setIsAuthenticated(false);
   };
 

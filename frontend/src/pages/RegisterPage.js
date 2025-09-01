@@ -1,9 +1,6 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-
-// It's a good practice to set a base URL for your API
-const API_URL = 'http://127.0.0.1:5001';
+import apiClient from '../api';
 
 function RegisterPage() {
     const [username, setUsername] = useState('');
@@ -15,7 +12,7 @@ function RegisterPage() {
         e.preventDefault();
         setMessage('Registering...');
         try {
-            const response = await axios.post(`${API_URL}/api/auth/register`, {
+            const response = await apiClient.post(`/api/auth/register`, {
                 username,
                 password
             });

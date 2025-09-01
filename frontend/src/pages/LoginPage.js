@@ -1,14 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
-
-// It's a good practice to set a base URL for your API
-const API_URL = 'http://127.0.0.1:5001';
-
-// We need to configure axios to send credentials (like session cookies) with requests
-const axiosInstance = axios.create({
-    baseURL: API_URL,
-    withCredentials: true
-});
+import apiClient from '../api';
 
 function LoginPage({ onLoginSuccess }) {
     const [username, setUsername] = useState('');
@@ -19,7 +10,7 @@ function LoginPage({ onLoginSuccess }) {
         e.preventDefault();
         setMessage('Logging in...');
         try {
-            const response = await axiosInstance.post(`/api/auth/login`, {
+            const response = await apiClient.post(`/api/auth/login`, {
                 username,
                 password
             });

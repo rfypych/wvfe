@@ -1,12 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import axios from 'axios';
-
-const API_URL = 'http://127.0.0.1:5001';
-const axiosInstance = axios.create({
-    baseURL: API_URL,
-    withCredentials: true
-});
+import apiClient from '../api';
 
 function DashboardPage({ onLogout }) {
     const [scans, setScans] = useState([]);
@@ -15,7 +9,7 @@ function DashboardPage({ onLogout }) {
 
     const fetchScans = useCallback(async () => {
         try {
-            const response = await axiosInstance.get('/api/scans');
+            const response = await apiClient.get('/api/scans');
             setScans(response.data);
         } catch (error) {
             setMessage('Could not load scan history.');
@@ -38,7 +32,7 @@ function DashboardPage({ onLogout }) {
         }
         setMessage('Starting new scan...');
         try {
-            const response = await axiosInstance.post('/api/scans', { target_url: targetUrl });
+            const response = await apiClient.post('/api/scans', { target_url: targetUrl });
             setMessage(response.data.message);
             setTargetUrl(''); // Clear the input field
             fetchScans(); // Refresh the list immediately
