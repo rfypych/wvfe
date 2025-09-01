@@ -113,6 +113,17 @@ def init_db():
         )
     """)
 
+    # Scan Logs Table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS scan_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            scan_id INT NOT NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            message TEXT NOT NULL,
+            FOREIGN KEY (scan_id) REFERENCES scans(id) ON DELETE CASCADE
+        )
+    """)
+
     conn.commit()
     cursor.close()
     conn.close()
@@ -181,6 +192,21 @@ def logout():
     logout_user()
     return jsonify({"status": "success", "message": "Logged out successfully."})
 
+# --- Logging Helper ---
+def log_to_db(scan_id, message):
+    """Logs a message to the scan_logs table for a specific scan."""
+    try:
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO scan_logs (scan_id, message) VALUES (%s, %s)", (scan_id, message))
+            conn.commit()
+            cursor.close()
+            conn.close()
+    except Exception as e:
+        print(f"Error logging to DB for scan {scan_id}: {e}")
+
+
 # --- Real Scanner Logic ---
 def run_real_scan(app_context, scan_id, target_url):
     """
@@ -188,11 +214,15 @@ def run_real_scan(app_context, scan_id, target_url):
     It orchestrates all the different scanner modules.
     """
     with app_context:
-        print(f"Starting real scan for scan_id: {scan_id} on {target_url}")
+        # Create a logging callback for the modules
+        def log_callback(message):
+            log_to_db(scan_id, message)
+
+        log_callback(f"Starting real scan on {target_url}")
         all_vulnerabilities = []
         conn = get_db_connection()
         if not conn:
-            print(f"Scan {scan_id} failed: could not connect to DB")
+            log_callback("Scan failed: could not connect to the database.")
             return
 
         try:
@@ -202,34 +232,38 @@ def run_real_scan(app_context, scan_id, target_url):
             conn.commit()
 
             # 2. Run the crawler to get all targets
-            crawl_targets = crawl_site(target_url)
+            log_callback("Starting web crawler...")
+            crawl_targets = crawl_site(target_url, log_callback)
+            log_callback(f"Crawler finished. Found {len(crawl_targets['links'])} pages and {len(crawl_targets['forms'])} forms.")
 
             # 3. Run all scanner modules on the discovered targets
-            print(f"--- Running Sensitive File Scan for scan {scan_id} ---")
+            log_callback("--- Running Sensitive File Scan ---")
             # The sensitive file scanner should check all discovered links
             for link in crawl_targets['links']:
-                all_vulnerabilities.extend(check_sensitive_files(link))
+                all_vulnerabilities.extend(check_sensitive_files(link, log_callback))
 
-            print(f"--- Running SQL Injection Scan for scan {scan_id} ---")
-            all_vulnerabilities.extend(check_sqli(crawl_targets))
+            log_callback("--- Running SQL Injection Scan ---")
+            all_vulnerabilities.extend(check_sqli(crawl_targets, log_callback))
 
-            print(f"--- Running XSS Scan for scan {scan_id} ---")
-            all_vulnerabilities.extend(check_xss(crawl_targets))
+            log_callback("--- Running XSS Scan ---")
+            all_vulnerabilities.extend(check_xss(crawl_targets, log_callback))
 
             # 4. Save all found vulnerabilities to the database
-            for vuln in all_vulnerabilities:
-                cursor.execute(
-                    "INSERT INTO vulnerabilities (scan_id, type, url, payload, details) VALUES (%s, %s, %s, %s, %s)",
-                    (scan_id, vuln['type'], vuln['url'], vuln['payload'], vuln['details'])
-                )
+            if all_vulnerabilities:
+                log_to_db(scan_id, f"Saving {len(all_vulnerabilities)} found vulnerabilities to the database.")
+                for vuln in all_vulnerabilities:
+                    cursor.execute(
+                        "INSERT INTO vulnerabilities (scan_id, type, url, payload, details) VALUES (%s, %s, %s, %s, %s)",
+                        (scan_id, vuln['type'], vuln['url'], vuln['payload'], vuln['details'])
+                    )
 
             # 5. Set status to 'completed'
             cursor.execute("UPDATE scans SET status = 'completed' WHERE id = %s", (scan_id,))
             conn.commit()
-            print(f"Real scan {scan_id} completed. Found {len(all_vulnerabilities)} total vulnerabilities.")
+            log_to_db(scan_id, f"Scan completed. Found {len(all_vulnerabilities)} total vulnerabilities.")
 
         except Exception as e:
-            print(f"An error occurred during scan {scan_id}: {e}")
+            log_to_db(scan_id, f"An error occurred during scan: {e}")
             if conn.is_connected():
                 cursor = conn.cursor()
                 cursor.execute("UPDATE scans SET status = 'failed' WHERE id = %s", (scan_id,))
@@ -329,6 +363,33 @@ def get_scan_details(scan_id):
         conn.close()
 
     return jsonify(scan)
+
+@app.route('/api/scans/<int:scan_id>/logs', methods=['GET'])
+@login_required
+def get_scan_logs(scan_id):
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"status": "error", "message": "Database connection failed."}), 500
+
+    cursor = conn.cursor(dictionary=True)
+    try:
+        # First, verify ownership of the scan
+        cursor.execute("SELECT user_id FROM scans WHERE id = %s", (scan_id,))
+        scan = cursor.fetchone()
+        if not scan or scan['user_id'] != current_user.id:
+            return jsonify({"status": "error", "message": "Scan not found or access denied."}), 404
+
+        # Then, get the logs
+        cursor.execute("SELECT timestamp, message FROM scan_logs WHERE scan_id = %s ORDER BY timestamp ASC", (scan_id,))
+        logs = cursor.fetchall()
+
+    except mysql.connector.Error as err:
+        return jsonify({"status": "error", "message": f"Database error: {err}"}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+    return jsonify(logs)
 
 # --- Main Application Routes ---
 @app.route('/')

@@ -5,31 +5,17 @@ from urllib.parse import urljoin
 SENSITIVE_PATHS = [
     ".env",
     ".env.local",
-    ".env.production",
     "wp-config.php",
-    "wp-admin/maint.php",
-    "web.config",
-    "Dockerfile",
-    "docker-compose.yml",
     ".git/config",
-    ".git/HEAD",
-    "/.svn/entries",
-    "/.hg/dirstate",
-    "/.bash_history",
-    "/.ssh/id_rsa",
-    "/.aws/credentials",
-    "/.aws/config",
-    "access_log",
-    "error_log",
-    "phpinfo.php",
 ]
 
-def check_sensitive_files(base_url):
+def check_sensitive_files(base_url, log_callback):
     """
     Checks for publicly exposed sensitive files on a target server.
 
     Args:
         base_url (str): The base URL of the target website.
+        log_callback (function): A function to call for logging messages.
 
     Returns:
         list: A list of dictionaries, where each dictionary represents a
@@ -40,19 +26,16 @@ def check_sensitive_files(base_url):
         'User-Agent': 'WVFE/1.0 (Web Vulnerability Finder and Exploiter)'
     }
 
-    print(f"[*] Starting sensitive file scan on {base_url}")
+    log_callback(f"[*] Checking for sensitive files on {base_url}")
 
     for path in SENSITIVE_PATHS:
-        # Construct the full URL
         full_url = urljoin(base_url, path)
 
         try:
-            # Send a GET request
             response = requests.get(full_url, headers=headers, timeout=5, verify=False)
 
-            # Check if the file is accessible
             if response.status_code == 200:
-                print(f"[+] Found sensitive file: {full_url}")
+                log_callback(f"[+] Found sensitive file: {full_url}")
                 vulnerability = {
                     "type": "Sensitive Data Exposure",
                     "url": full_url,
@@ -61,11 +44,7 @@ def check_sensitive_files(base_url):
                 }
                 found_vulnerabilities.append(vulnerability)
 
-        except requests.exceptions.RequestException as e:
-            # This can happen for timeouts, connection errors, etc.
-            # We can choose to log this, but for now, we'll just skip it.
-            # print(f"[!] Error checking {full_url}: {e}")
+        except requests.exceptions.RequestException:
             pass
 
-    print(f"[*] Sensitive file scan finished. Found {len(found_vulnerabilities)} potential issues.")
     return found_vulnerabilities

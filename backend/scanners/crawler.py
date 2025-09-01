@@ -2,26 +2,24 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 
-def crawl_site(base_url):
+def crawl_site(base_url, log_callback):
     """
     Crawls a website starting from the base_url to discover links and forms.
 
     Args:
         base_url (str): The starting URL to crawl.
+        log_callback (function): A function to call for logging messages.
 
     Returns:
         dict: A dictionary with two keys: 'links' (a set of unique URLs found
               on the site) and 'forms' (a list of dictionaries, each
               representing a form).
     """
-    # Get the domain of the base_url to stay on the same site
     base_netloc = urlparse(base_url).netloc
 
     urls_to_visit = {base_url}
     visited_urls = set()
     discovered_forms = []
-
-    print(f"[*] Starting crawl on {base_url}")
 
     while urls_to_visit:
         url = urls_to_visit.pop()
@@ -29,14 +27,14 @@ def crawl_site(base_url):
             continue
 
         visited_urls.add(url)
-        print(f"  -> Crawling: {url}")
+        log_callback(f"  -> Crawling: {url}")
 
         try:
             response = requests.get(url, timeout=5, verify=False, headers={'User-Agent': 'WVFE-Crawler/1.0'})
             if 'text/html' not in response.headers.get('Content-Type', ''):
                 continue
         except requests.RequestException as e:
-            print(f"[!] Could not fetch {url}: {e}")
+            log_callback(f"[!] Could not fetch {url}: {e}")
             continue
 
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -44,7 +42,6 @@ def crawl_site(base_url):
         # Discover all links
         for a_tag in soup.find_all('a', href=True):
             link = urljoin(base_url, a_tag['href'])
-            # Only visit links on the same domain
             if urlparse(link).netloc == base_netloc and link not in visited_urls:
                 urls_to_visit.add(link)
 
@@ -67,7 +64,6 @@ def crawl_site(base_url):
                 'inputs': inputs
             })
 
-    print(f"[*] Crawl finished. Found {len(visited_urls)} pages and {len(discovered_forms)} forms.")
     return {
         'links': visited_urls,
         'forms': discovered_forms

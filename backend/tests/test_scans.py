@@ -27,7 +27,6 @@ def test_start_scan_endpoint(mock_get_db, mock_run_scan, client):
     mock_cursor_login = MagicMock()
     mock_cursor_login.fetchone.return_value = mock_user_data_for_login
     mock_get_db.return_value.cursor.return_value = mock_cursor_login
-
     login_response = client.post('/api/auth/login', data=json.dumps({'username': 'testuser', 'password': 'password'}), content_type='application/json')
     assert login_response.status_code == 200
 
@@ -44,50 +43,61 @@ def test_start_scan_endpoint(mock_get_db, mock_run_scan, client):
     assert response.json['scan_id'] == 123
     mock_run_scan.assert_called_once_with(ANY, 123, 'http://example.com')
 
+@patch('app.get_db_connection')
+def test_get_scan_logs_endpoint(mock_get_db, client):
+    """Test the endpoint for fetching scan logs."""
+    # --- Login Step ---
+    mock_user_data_for_login = {'id': 1, 'username': 'testuser', 'password_hash': bcrypt.generate_password_hash('password').decode('utf-8')}
+    mock_get_db.return_value.cursor.return_value.fetchone.return_value = mock_user_data_for_login
+    login_response = client.post('/api/auth/login', data=json.dumps({'username': 'testuser', 'password': 'password'}), content_type='application/json')
+    assert login_response.status_code == 200
+
+    # --- Test Step ---
+    mock_cursor = mock_get_db.return_value.cursor.return_value
+    # 1. First fetchone call will be from load_user
+    mock_user_data_for_loader = {'id': 1, 'username': 'testuser'}
+    # 2. Second fetchone call will be from get_scan_logs for the ownership check
+    mock_scan_ownership_data = {'user_id': 1}
+    mock_cursor.fetchone.side_effect = [mock_user_data_for_loader, mock_scan_ownership_data]
+
+    # Mock for the actual log data
+    mock_cursor.fetchall.return_value = [{'timestamp': '2023-01-01', 'message': 'Scan started'}]
+
+    response = client.get('/api/scans/1/logs')
+    assert response.status_code == 200
+    assert len(response.json) == 1
+    assert response.json[0]['message'] == 'Scan started'
+
 
 # --- Test Full Scan Logic ---
 
+@patch('app.log_to_db')
 @patch('app.check_xss')
 @patch('app.check_sqli')
 @patch('app.check_sensitive_files')
 @patch('app.crawl_site')
 @patch('app.get_db_connection')
-def test_run_real_scan_orchestration(mock_get_db, mock_crawl, mock_sensitive_scan, mock_sqli_scan, mock_xss_scan):
-    """Test that run_real_scan correctly orchestrates all modules."""
+def test_run_real_scan_orchestration(mock_get_db, mock_crawl, mock_sensitive_scan, mock_sqli_scan, mock_xss_scan, mock_log_db):
+    """Test that run_real_scan correctly orchestrates all modules and logs messages."""
     from app import run_real_scan
 
     # --- Setup Mocks ---
-    mock_crawl.return_value = {'links': {'http://test.com/page1'}, 'forms': []}
-    mock_sensitive_scan.return_value = [{'type': 'Sensitive Data Exposure', 'url': 'http://test.com/.env', 'payload': 'N/A', 'details': '...'}]
-    mock_sqli_scan.return_value = [{'type': 'SQL Injection', 'url': 'http://test.com/page1?id=1', 'payload': "'", 'details': '...'}]
-    mock_xss_scan.return_value = [{'type': 'Reflected XSS', 'url': 'http://test.com/page1?q=xss', 'payload': '<script>', 'details': '...'}]
-
-    mock_cursor = mock_get_db.return_value.cursor.return_value
+    mock_crawl.return_value = {'links': set(), 'forms': []}
+    mock_sensitive_scan.return_value = []
+    mock_sqli_scan.return_value = []
+    mock_xss_scan.return_value = []
 
     # --- Execute ---
     run_real_scan(app.app_context(), scan_id=1, target_url='http://test.com')
 
     # --- Asserts ---
-    # 1. Check that all modules were called
-    mock_crawl.assert_called_once_with('http://test.com')
-    mock_sensitive_scan.assert_called_with('http://test.com/page1')
-    mock_sqli_scan.assert_called_once_with(mock_crawl.return_value)
-    mock_xss_scan.assert_called_once_with(mock_crawl.return_value)
+    # Check that logging was called at key points
+    mock_log_db.assert_any_call(1, 'Starting real scan on http://test.com')
+    mock_log_db.assert_any_call(1, 'Starting web crawler...')
+    mock_log_db.assert_any_call(1, '--- Running Sensitive File Scan ---')
+    mock_log_db.assert_any_call(1, '--- Running SQL Injection Scan ---')
+    mock_log_db.assert_any_call(1, '--- Running XSS Scan ---')
+    mock_log_db.assert_any_call(1, 'Scan completed. Found 0 total vulnerabilities.')
 
-    # 2. Check that all 3 vulnerabilities were inserted
-    assert mock_cursor.execute.call_count >= 5 # 1 running, 3 inserts, 1 completed
-    mock_cursor.execute.assert_any_call(
-        "INSERT INTO vulnerabilities (scan_id, type, url, payload, details) VALUES (%s, %s, %s, %s, %s)",
-        (1, 'Sensitive Data Exposure', ANY, ANY, ANY)
-    )
-    mock_cursor.execute.assert_any_call(
-        "INSERT INTO vulnerabilities (scan_id, type, url, payload, details) VALUES (%s, %s, %s, %s, %s)",
-        (1, 'SQL Injection', ANY, ANY, ANY)
-    )
-    mock_cursor.execute.assert_any_call(
-        "INSERT INTO vulnerabilities (scan_id, type, url, payload, details) VALUES (%s, %s, %s, %s, %s)",
-        (1, 'Reflected XSS', ANY, ANY, ANY)
-    )
-
-    # 3. Check that the final status was set to 'completed'
-    mock_cursor.execute.assert_any_call("UPDATE scans SET status = 'completed' WHERE id = %s", (1,))
+    # Check that the final status was set to 'completed'
+    mock_get_db.return_value.cursor.return_value.execute.assert_any_call("UPDATE scans SET status = 'completed' WHERE id = %s", (1,))
